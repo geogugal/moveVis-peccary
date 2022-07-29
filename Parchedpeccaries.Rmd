@@ -1,0 +1,306 @@
+---
+title: "Parched Peccaries; Yucatan, Mexico"
+author: "jugal"
+date: "02/03/2021"
+---
+
+## Drought-constrained white-lipped peccary movements in the Yucatan, Mexico
+
+Import data shared by Dr. R. Reyna; WLP trajectories of two groups; water hole locations / binary presence 
+
+```{r}
+#set working directory to shared dropbox/me/wlp/...
+setwd("C:/Users/jugal/Dropbox/Research/Movement Ecology/White lipped peccary")
+
+#import csv of locations
+peccary <- read.csv("Rafa_pecarry_13_2018_forRaja_withoutinfo.csv")
+
+```
+
+Clean & pre-process data: remove NAs; project; 
+
+```{r}
+#clip to keep coordinate data 
+peccary <- subset(peccary, select = c("Acquisition.Time",
+                                      "Acquisition.Start.Time",
+                                      "GPS.Fix.Time",
+                                      "GPS.Latitude",
+                                      "GPS.Longitude",
+                                      "GPS.UTM.Northing",
+                                      "GPS.UTM.Easting",
+                                      "GPS.Altitude",
+                                      "GPS.Speed",
+                                      "GPS.Heading"))
+
+#missing data
+library(Amelia)
+missmap(peccary)
+
+#remove all missing rows 
+peccary <- peccary[complete.cases(peccary), ]
+str(peccary)
+
+#basic plot
+library(tidyverse)
+
+#long/lat
+ggplot(data = peccary, mapping = aes(x = GPS.Longitude,
+                                     y = GPS.Latitude)) +
+  geom_point()
+
+#clip 
+peccary <- subset(peccary, GPS.Longitude >= -90.20) #fieldwork main house (locations at top left)
+peccary <- subset(peccary, GPS.Longitude <= -89.70) #field house ? trip to near city?
+peccary <- subset(peccary, GPS.Speed <= 20) #omit records with v greater than 20 m/s
+
+ggplot(data = peccary, mapping = aes(x = GPS.Longitude,
+                                     y = GPS.Latitude)) +
+  geom_point()
+
+#asthetic name changes
+#UTM
+peccary$easting <- as.numeric(peccary$GPS.UTM.Easting)
+peccary$northing <- as.numeric(peccary$GPS.UTM.Northing)
+
+#time, t
+peccary$datetime <- strptime(peccary$GPS.Fix.Time,
+                            format = ("%Y.%m.%d %H:%M:%S"))
+peccary$datetime <- as.POSIXct(peccary$datetime)
+peccary <- subset(peccary, datetime >= as.POSIXct("2017-01-01 00:00:00")) #for only 2017 data
+
+#altitude/elevation, z
+peccary$altitude <- as.numeric(peccary$GPS.Altitude)
+
+#direction/heading
+peccary$heading <- peccary$GPS.Heading
+
+#speed
+peccary$speed <- peccary$GPS.Speed
+
+#long lat / x y
+peccary$longitude <- peccary$GPS.Longitude
+peccary$latitude <- peccary$GPS.Latitude
+
+peccary <- subset(peccary, select = c("datetime",
+                                      "longitude",
+                                      "latitude",
+                                      "altitude",
+                                      "speed",
+                                      "heading"))
+
+peccary <- peccary[complete.cases(peccary), ]
+str(peccary)
+
+plot(peccary, col = "pink")
+
+```
+
+save
+```{r}
+#save_peccary <- peccary
+#write.csv(save_peccary, "peccary_0522.csv")
+peccary <- save_peccary
+```
+
+import waterbodies 
+```{r}
+agua <- read.csv("aguadas.csv")
+```
+
+sf
+```{r}
+library(sf)
+peccary <- st_as_sf(peccary,
+                    coords = c("latitude", "longitude"))
+```
+
+
+moveVis - core
+```{r}
+library(moveVis)
+move_peccary <- df2move(peccary, 
+                        proj = "+proj=longlat +ellp",
+                        x = "longitude",
+                        y = "latitude",
+                        time = "datetime")
+
+move_peccary <- align_move(move_peccary,
+                           res = "mean",
+                           digit = "min",
+                           unit = "mins",
+                           spaceMethod = "greatcircle")
+```
+
+aguadas shared by R Reyna
+```{r}
+#switch to local
+setwd("C:/Users/jugal/Documents/research/peccaries")
+
+#import csv of watering holes
+ponds <- read.csv("aguadas0522.csv")
+ponds <- subset(ponds, select = c("ID",
+                           "X",
+                           "Y"))
+
+#reset working directory
+setwd("C:/Users/jugal/Dropbox/Research/Movement Ecology/White lipped peccary")
+
+library(sf)
+ponds_shp <- st_read("aguadas/Waterhole_Locations.shp") 
+ponds_shp <- subset(ponds_shp, select = c("ID",
+                           "X",
+                           "Y"))
+
+st_geometry_type(ponds_shp)
+
+```
+```{r}
+ggplot(data = ponds_shp,
+       aes(x = X,
+           y = Y)) +
+  geom_point()
+```
+```{r}
+ponds_shp <- st_transform(ponds_shp, crs = 4326)
+```
+
+```{r}
+ponds_shp <- subset(ponds_shp, Y <= 2011647.38) 
+ponds_shp <- subset(ponds_shp, X <= 214368.46 )
+
+```
+
+moveVis - osm - topographic
+```{r}
+frames <- frames_spatial(move_peccary,
+                         map_service = "osm", map_type = "topographic",
+                         trace_show = T,
+                         trace_colour = "pink",
+                         path_legend = F,
+                         path_size = 0.8, 
+                         path_colours = "brown") %>% 
+  add_northarrow(height = 0.05,
+                 position = "upperright",
+                 colour = "black",
+                 size = 1,label_text = "N",
+                 label_margin = 0.4,
+                 label_size = 5) %>%
+  add_scalebar(position = "bottomleft",
+               units = "km") %>%
+  add_labels(x = "Longitude", y = "Latitude", 
+             title = "White-lipped peccary group \n in Calakmul Biosphere Reserve",
+             caption = "Peccary movements become increasingly constrained as dry season approaches") %>%
+  add_timestamps(move_peccary, type = "label") %>% 
+  add_gg(gg = expr(geom_sf(aes(),
+                              data = ponds_shp,
+                              colour = "blue")))
+
+frames[[100]]
+frames[[200]]
+
+```
+
+
+
+
+
+
+moveVis - pink grayscale
+```{r}
+frames <- frames_spatial(move_peccary,
+                         map_service = "osm", map_type = "grayscale",
+                         trace_show = T,
+                         trace_colour = "pink",
+                         path_legend = F) %>% 
+  add_northarrow(height = 0.05,
+                 position = "upperright",
+                 colour = "black",
+                 size = 1,label_text = "N",
+                 label_margin = 0.4,
+                 label_size = 5) %>%
+  add_scalebar(position = "bottomleft",
+               units = "km") %>%
+  add_labels(x = "Longitude", y = "Latitude") %>%
+  add_timestamps(move_peccary, type = "label")
+
+frames[[100]]
+frames[[200]]
+
+```
+
+moveVis - pink terrain
+```{r}
+frames <- frames_spatial(move_peccary,
+                         map_service = "osm", map_type = "terrain",
+                         trace_show = T,
+                         trace_colour = "pink",
+                         path_legend = F) %>% 
+  add_northarrow(height = 0.05,
+                 position = "upperright",
+                 colour = "black",
+                 size = 1,label_text = "N",
+                 label_margin = 0.4,
+                 label_size = 5) %>%
+  add_scalebar(position = "bottomleft",
+               units = "km") %>%
+  add_labels(x = "Longitude", y = "Latitude", 
+             title = "Squadron of white-lipped peccaries in the Yucatan, early 2017",
+             caption = "movements become constrained as drought season approaches in Yucatan, Mexico 2017") %>%
+  add_timestamps(move_peccary, type = "label")
+
+frames[[100]]
+frames[[200]]
+
+```
+moveVis - pink humanitarian
+```{r}
+frames <- frames_spatial(move_peccary,
+                         map_service = "osm", map_type = "humanitarian",
+                         trace_show = T,
+                         trace_colour = "pink",
+                         path_legend = F) %>% 
+  add_northarrow(height = 0.05,
+                 position = "upperright",
+                 colour = "black",
+                 size = 1,label_text = "N",
+                 label_margin = 0.4,
+                 label_size = 5) %>%
+  add_scalebar(position = "bottomleft",
+               units = "km") %>%
+  add_labels(x = "Longitude", y = "Latitude") %>%
+  add_timestamps(move_peccary, type = "label")
+
+frames[[100]]
+frames[[200]]
+
+```
+
+moveVis - pink mtb
+```{r}
+frames <- frames_spatial(move_peccary,
+                         map_service = "osm", map_type = "mtb",
+                         trace_show = T,
+                         trace_colour = "pink",
+                         path_legend = F) %>% 
+  add_northarrow(height = 0.05,
+                 position = "upperright",
+                 colour = "black",
+                 size = 1,label_text = "N",
+                 label_margin = 0.4,
+                 label_size = 5) %>%
+  add_scalebar(position = "bottomleft",
+               units = "km") %>%
+  add_labels(x = "Longitude", y = "Latitude") %>%
+  add_timestamps(move_peccary, type = "label")
+
+frames[[100]]
+frames[[200]]
+
+```
+
+
+moveVis animation functiion
+```{r}
+animate_frames(frames, out_file = "peccaries_osm_topographic.gif",
+               overwrite = T)
+```

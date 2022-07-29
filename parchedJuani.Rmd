@@ -1,0 +1,127 @@
+---
+title: "Parched Peccaries; Yucatan, Mexico"
+author: "jugal"
+date: "02/03/2021"
+---
+
+## Drought-constrained white-lipped peccary movements in the Yucatan, Mexico
+
+Import data shared by Dr. R. Reyna; WLP trajectories of two groups; water hole locations / binary presence 
+
+```{r}
+#set working directory to shared dropbox/me/wlp/...
+setwd("C:/Users/jugal/Dropbox/Research/Movement Ecology/White lipped peccary/Shared_peccary")
+
+#import csv of locations
+juani <- read.csv("Juani.csv")
+
+```
+
+Clean & pre-process data: remove NAs; project; 
+
+```{r}
+#clip to keep coordinate data 
+juani <- subset(juani, select = c("Y",
+                                  "X",
+                                  "Date",
+                                  "Hour"))
+
+#missing data
+library(Amelia)
+missmap(juani)
+
+#remove all missing rows 
+juani <- juani[complete.cases(juani), ]
+str(juani)
+
+#basic plot
+library(tidyverse)
+
+#long/lat
+ggplot(data = juani, mapping = aes(x = X,
+                                   y = Y)) +
+  geom_point()
+
+#clip 
+#juani <- subset(juani, GPS.Longitude >= -90.20) #fieldwork main house (locations at top left)
+#juani <- subset(juani, GPS.Longitude <= -89.70) #field house ? trip to near city?
+#juani <- subset(juani, GPS.Speed <= 20) #omit records with v greater than 20 m/s
+
+ggplot(data = juani, mapping = aes(x = X,
+                                   y = Y)) +
+  geom_point()
+
+
+```
+
+
+```{r}
+
+#time, t
+str(juani)
+juani$datetime <- paste0(juani$Date, " ", juani$Hour)
+str(juani)
+juani$datetime <- paste0(juani$Date)
+juani$datetime <- as.Date(juani$datetime)
+juani$datetime <- as.POSIXct(juani$datetime)
+
+```
+
+```{r}
+#long lat / x y
+juani$longitude <- juani$X
+juani$latitude <- juani$Y
+
+juani <- subset(juani, select = c("datetime",
+                                  "longitude",
+                                  "latitude"))
+
+
+juani <- juani[complete.cases(juani), ]
+str(juani)
+
+#plot(juani, col = "purple")
+```
+
+moveVis - core
+```{r}
+library(moveVis)
+move_juani <- df2move(juani,
+                      proj = "+proj=longlat +ellp",
+                      x = "longitude",
+                      y = "latitude",
+                      time = "datetime")
+
+move_juani <- align_move(move_juani,
+                         res = "mean",
+                         digit = "min",
+                         unit = "mins",
+                         spaceMethod = "greatcircle")
+```
+
+moveVis - pink satelitte; mapbox
+```{r}
+frames <- frames_spatial(move_juani,
+                         map_service = "mapbox", map_type = "satellite", map_token = mapbox,
+                         trace_show = T,
+                         trace_colour = "pink",
+                         path_legend = F,
+                         path_size = 0.8, 
+                         path_colours = "brown") %>% 
+  add_northarrow(height = 0.05,
+                 position = "upperright",
+                 colour = "black",
+                 size = 1,label_text = "N",
+                 label_margin = 0.4,
+                 label_size = 5) %>%
+  add_scalebar(position = "bottomleft",
+               units = "km") %>%
+  add_labels(x = "Longitude", y = "Latitude", 
+             title = "White-lipped peccary group in the Yucatan, Mexico",
+             caption = "Captured with radio telemetry in 2015 by Rafael Reyna") %>%
+  add_timestamps(move_juani, type = "label")
+
+frames[[100]]
+frames[[200]]
+
+```
